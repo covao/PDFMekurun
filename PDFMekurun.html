@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple PDF Viewer</title>
+    <!-- PDF.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <style>
+        body {
+            font-family: sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            background-color: #f0f0f0;
+            overflow: hidden;
+        }
+
+        /* Compact Control Bar */
+        #controls {
+            background: #333;
+            color: white;
+            padding: 4px; /* Reduced padding */
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            justify-content: center;
+            flex-wrap: wrap;
+            z-index: 100;
+            transition: opacity 0.3s;
+            font-size: 0.8rem; /* Smaller font */
+            flex-shrink: 0; /* Prevent shrinking */
+        }
+
+        button {
+            padding: 2px 8px; /* Compact buttons */
+            cursor: pointer;
+            background: #555;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            font-size: 0.8rem;
+            transition: background 0.2s;
+            height: 24px; /* Fixed compact height */
+        }
+
+        button:hover {
+            background: #777;
+        }
+
+        button.active {
+            background: #4a90e2;
+        }
+        
+        input[type="number"] {
+            width: 40px;
+            padding: 2px;
+            border-radius: 3px;
+            border: 1px solid #ccc;
+            text-align: center;
+            font-size: 0.8rem;
+            height: 18px;
+        }
+
+        /* Divider */
+        .divider {
+            border-left: 1px solid #666;
+            height: 14px; /* Smaller divider */
+            margin: 0 2px;
+        }
+
+        /* Drop Zone */
+        #drop-zone {
+            flex: 1;
+            display: flex;
+            align-items: center; /* Center vertically */
+            justify-content: center;
+            border: 2px dashed #ccc; /* Thinner border */
+            margin: 5px; /* Reduced margin */
+            border-radius: 4px;
+            color: #888;
+            font-size: 1rem;
+            transition: background 0.3s, border-color 0.3s;
+            overflow: auto;
+            position: relative;
+            background-color: #e5e5e5;
+        }
+
+        #drop-zone.dragover {
+            background-color: #d0d0d0;
+            border-color: #666;
+        }
+
+        #placeholder-text {
+            pointer-events: none;
+        }
+
+        #viewer-container {
+            display: flex;
+            justify-content: center;
+            align-items: center; /* Center vertically in container */
+            gap: 5px; /* Reduced gap to half (5px) */
+            padding: 10px; /* Reduced padding */
+            width: 100%;
+            height: 100%; /* Use full height of parent */
+            box-sizing: border-box;
+            overflow: auto;
+        }
+
+        canvas {
+            box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+            background: white;
+            /* Remove fixed max-width/height here as we calculate scale in JS, 
+               but keep max-width 100% for safety */
+            max-width: 100%;
+            height: auto;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        :fullscreen #drop-zone {
+            margin: 0;
+            border: none;
+            border-radius: 0;
+            height: 100vh;
+            background-color: #ccc; /* Lighter gray background in fullscreen */
+        }
+        
+        :fullscreen body {
+            background-color: #ccc; /* Lighter gray background in fullscreen */
+        }
+
+        :fullscreen #controls {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Control Area -->
+    <div id="controls">
+        <button id="prev-btn" title="Previous Page">Prev</button>
+        <span id="page-info" style="min-width: 60px; text-align: center;">- / -</span>
+        <button id="next-btn" title="Next Page">Next</button>
+        
+        <div class="divider"></div>
+
+        <button id="view-mode-btn">Single</button>
+        <button id="binding-btn">L-to-R</button>
+
+        <div class="divider"></div>
+
+        <span>Auto:</span>
+        <input type="number" id="interval-input" value="3" min="1" step="0.5" title="Seconds">
+        <span>s</span>
+        <button id="autoplay-btn">Start</button>
+
+        <div class="divider"></div>
+
+        <button id="fullscreen-btn" title="Toggle Full Screen">Full Screen</button>
+    </div>
+
+    <!-- Main Area -->
+    <div id="drop-zone">
+        <div id="placeholder-text">Drag & Drop PDF file here</div>
+        <div id="viewer-container" class="hidden"></div>
+    </div>
+
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+        let pdfDoc = null;
+        let pageNum = 1;
+        let pageRendering = false;
+        let scale = 1.0;
+        let isSpread = true; // Default to Spread
+        let isRightBinding = false; // Default to L-to-R
+        
+        let autoPlayTimer = null;
+        let resizeTimeout = null;
+
+        const dropZone = document.getElementById('drop-zone');
+        const container = document.getElementById('viewer-container');
+        const placeholder = document.getElementById('placeholder-text');
+        const pageInfo = document.getElementById('page-info');
+        const viewModeBtn = document.getElementById('view-mode-btn');
+
+        // Initial UI State
+        if (isSpread) {
+            viewModeBtn.textContent = "Spread";
+            viewModeBtn.classList.add('active');
+        }
+
+        // --- Drag & Drop ---
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('dragover');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            
+            if (e.dataTransfer.items) {
+                const item = e.dataTransfer.items[0];
+                if (item.kind === 'file' && item.type === 'application/pdf') {
+                    const file = item.getAsFile();
+                    loadFile(file);
+                } else {
+                    alert('Please drop a PDF file.');
+                }
+            } else {
+                const file = e.dataTransfer.files[0];
+                if (file && file.type === 'application/pdf') {
+                    loadFile(file);
+                }
+            }
+        });
+
+        function loadFile(file) {
+            stopAutoPlay();
+            const fileReader = new FileReader();
+            fileReader.onload = function() {
+                const typedarray = new Uint8Array(this.result);
+                loadPDF(typedarray);
+            };
+            fileReader.readAsArrayBuffer(file);
+        }
+
+        // --- Load PDF ---
+        async function loadPDF(data) {
+            try {
+                pdfDoc = await pdfjsLib.getDocument(data).promise;
+                pageNum = 1;
+                placeholder.classList.add('hidden');
+                container.classList.remove('hidden');
+                
+                updatePageInfo();
+                renderPages();
+            } catch (error) {
+                console.error('Error loading PDF:', error);
+                alert('Failed to load PDF.');
+            }
+        }
+
+        // --- Render ---
+        async function renderPages() {
+            if (!pdfDoc) return;
+            pageRendering = true;
+            container.innerHTML = '';
+
+            // --- Auto-fit Scale Calculation ---
+            // Calculate scale to fit the screen (best fit)
+            try {
+                const page = await pdfDoc.getPage(pageNum);
+                const viewport = page.getViewport({ scale: 1.0 });
+                
+                // Calculate available space
+                const controls = document.getElementById('controls');
+                // If fullscreen, controls are hidden (height ~ 0), else subtract controls height
+                const controlsHeight = document.fullscreenElement ? 0 : (controls ? controls.offsetHeight : 0);
+                const margin = 20; // safe margin
+                
+                const availableWidth = window.innerWidth - margin;
+                const availableHeight = window.innerHeight - controlsHeight - margin;
+
+                let targetPageWidth = availableWidth;
+                if (isSpread) {
+                    targetPageWidth = availableWidth / 2;
+                }
+
+                const scaleW = targetPageWidth / viewport.width;
+                const scaleH = availableHeight / viewport.height;
+
+                // Use the smaller scale to ensure it fits both width and height (Best Fit)
+                // Default to scaleH (vertical fit) if logic is ambiguous, but min() is safer.
+                scale = Math.min(scaleW, scaleH);
+                
+            } catch (e) {
+                console.error("Error calculating scale", e);
+                scale = 1.0; // Fallback
+            }
+            // ----------------------------------
+
+            let pagesToRender = [];
+
+            if (!isSpread) {
+                // Single Page
+                pagesToRender.push(pageNum);
+            } else {
+                // Spread Mode
+                if (pageNum === 1) {
+                    pagesToRender.push(1);
+                } else {
+                    let leftPageBase = (pageNum % 2 === 0) ? pageNum : pageNum - 1;
+                    const p1 = leftPageBase;
+                    const p2 = leftPageBase + 1;
+
+                    if (isRightBinding) {
+                        // Right-to-Left (Manga): [p2][p1]
+                        if (p2 <= pdfDoc.numPages) pagesToRender.push(p2);
+                        pagesToRender.push(p1);
+                    } else {
+                        // Left-to-Right (Standard): [p1][p2]
+                        pagesToRender.push(p1);
+                        if (p2 <= pdfDoc.numPages) pagesToRender.push(p2);
+                    }
+                }
+            }
+
+            for (let num of pagesToRender) {
+                await renderPageToCanvas(num);
+            }
+
+            pageRendering = false;
+            updatePageInfo();
+        }
+
+        async function renderPageToCanvas(num) {
+            try {
+                const page = await pdfDoc.getPage(num);
+                const viewport = page.getViewport({ scale: scale });
+
+                const canvas = document.createElement('canvas');
+                const context = canvas.getContext('2d');
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
+                
+                // Ensure canvas doesn't overflow container flex logic
+                // Max width per page: 95% for single, 48% for spread (approx) to prevent wrapping
+                canvas.style.maxWidth = isSpread ? "48%" : "95%"; 
+
+                container.appendChild(canvas);
+
+                const renderContext = {
+                    canvasContext: context,
+                    viewport: viewport
+                };
+                
+                await page.render(renderContext).promise;
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
+        // --- Navigation ---
+        function onPrevPage() {
+            if (!pdfDoc || pageNum <= 1) return;
+            
+            let decrement = isSpread && pageNum > 1 ? 2 : 1;
+            if(isSpread && pageNum === 2) decrement = 1;
+            
+            pageNum -= decrement;
+            if (pageNum < 1) pageNum = 1;
+            renderPages();
+        }
+
+        function onNextPage() {
+            if (!pdfDoc || pageNum >= pdfDoc.numPages) {
+                if (autoPlayTimer) stopAutoPlay();
+                return;
+            }
+
+            let increment = isSpread ? 2 : 1;
+            
+            pageNum += increment;
+            if (pageNum > pdfDoc.numPages) pageNum = pdfDoc.numPages;
+            renderPages();
+        }
+
+        function updatePageInfo() {
+            if (!pdfDoc) {
+                pageInfo.textContent = "- / -";
+                return;
+            }
+            pageInfo.textContent = `${pageNum} / ${pdfDoc.numPages}`;
+        }
+
+        // --- Auto Play ---
+        const autoPlayBtn = document.getElementById('autoplay-btn');
+        const intervalInput = document.getElementById('interval-input');
+
+        autoPlayBtn.addEventListener('click', () => {
+            if (autoPlayTimer) {
+                stopAutoPlay();
+            } else {
+                startAutoPlay();
+            }
+        });
+
+        function startAutoPlay() {
+            if (!pdfDoc) return;
+            if (pageNum >= pdfDoc.numPages) return;
+
+            const seconds = parseFloat(intervalInput.value);
+            if (isNaN(seconds) || seconds <= 0) {
+                alert("Invalid seconds");
+                return;
+            }
+
+            autoPlayBtn.textContent = "Stop";
+            autoPlayBtn.classList.add('active');
+            intervalInput.disabled = true;
+
+            autoPlayTimer = setInterval(onNextPage, seconds * 1000);
+        }
+
+        function stopAutoPlay() {
+            if (autoPlayTimer) {
+                clearInterval(autoPlayTimer);
+                autoPlayTimer = null;
+            }
+            autoPlayBtn.textContent = "Start";
+            autoPlayBtn.classList.remove('active');
+            intervalInput.disabled = false;
+        }
+
+        // --- Full Screen ---
+        const fullscreenBtn = document.getElementById('fullscreen-btn');
+        
+        function toggleFullScreen() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(err => {
+                    alert(`Error: ${err.message}`);
+                });
+            } else {
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                }
+            }
+        }
+
+        document.addEventListener('fullscreenchange', () => {
+            if (document.fullscreenElement) {
+                fullscreenBtn.textContent = "Exit";
+                fullscreenBtn.classList.add('active');
+            } else {
+                fullscreenBtn.textContent = "Full Screen";
+                fullscreenBtn.classList.remove('active');
+            }
+            // Re-render to fit the new screen size
+            renderPages();
+        });
+
+        // --- Window Resize Handling ---
+        window.addEventListener('resize', () => {
+            if (!pdfDoc) return;
+            // Debounce resize
+            clearTimeout(resizeTimeout);
+            resizeTimeout = setTimeout(() => {
+                renderPages();
+            }, 200);
+        });
+
+        fullscreenBtn.addEventListener('click', toggleFullScreen);
+
+        // --- Event Listeners ---
+        document.getElementById('prev-btn').addEventListener('click', () => {
+            stopAutoPlay();
+            onPrevPage();
+        });
+        document.getElementById('next-btn').addEventListener('click', () => {
+            stopAutoPlay();
+            onNextPage();
+        });
+
+        document.addEventListener('keydown', (e) => {
+            if (!pdfDoc) return;
+            if (e.key === 'ArrowLeft') {
+                stopAutoPlay();
+                onPrevPage();
+            }
+            if (e.key === 'ArrowRight') {
+                stopAutoPlay();
+                onNextPage();
+            }
+        });
+
+        viewModeBtn.addEventListener('click', () => {
+            isSpread = !isSpread;
+            viewModeBtn.textContent = isSpread ? "Spread" : "Single";
+            viewModeBtn.classList.toggle('active', isSpread);
+            renderPages();
+        });
+
+        const bindingBtn = document.getElementById('binding-btn');
+        bindingBtn.addEventListener('click', () => {
+            isRightBinding = !isRightBinding;
+            bindingBtn.textContent = isRightBinding ? "R-to-L" : "L-to-R";
+            bindingBtn.classList.toggle('active', isRightBinding);
+            renderPages();
+        });
+
+    </script>
+</body>
+</html>
