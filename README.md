@@ -4,6 +4,8 @@
 
 A web-based, client-side PDF viewer designed for reading standard documents and manga/comics. It features drag-and-drop loading, dual-page viewing, and auto-play capabilities with a compact, distraction-free UI.
 
+[Start PDF Viewer](https://covao.github.io/PDFMekurun/PDFMekurun.html)
+
 2. Functional Requirements
 
 2.1 File Loading
