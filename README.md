@@ -1,95 +1,49 @@
-# Simple PDF Viewer Specification
+# Overviews
 
-1. Overview
-
-A web-based, client-side PDF viewer designed for reading standard documents and manga/comics. It features drag-and-drop loading, dual-page viewing, and auto-play capabilities with a compact, distraction-free UI.
-
+A lightweight, client-side web application designed for reading PDF documents and manga directly in the browser. It offers a distraction-free environment with intuitive controls and responsive design.
 [Start PDF Viewer](https://covao.github.io/PDFMekurun/PDFMekurun.html)
 
-2. Functional Requirements
+# Features
 
-2.1 File Loading
+🖱️ Drag & Drop: Instantly load local PDF files.
 
-Drag & Drop: Users can load a PDF file by dragging and dropping it onto the designated drop zone.
+📖 Spread View: Display two pages side-by-side (default).
 
-Format Support: Supports standard PDF files.
+🔄 Binding Direction: Toggle between Left-to-Right (Standard) and Right-to-Left (Manga) modes.
 
-2.2 View Modes
+▶️ Auto-Play: Hands-free page turning with customizable intervals.
 
-Single Page Mode: Displays one page at a time.
+🖥️ Full Screen: Immersive reading mode with auto-scaling.
 
-Spread Mode (Default): Displays two pages side-by-side.
+🔗 URL Support: Open specific PDFs and pages via URL parameters.
 
-Logic: Handles cover pages (Page 1) individually if needed, then pairs subsequent pages.
+# Usages
 
-Binding Direction:
+Open the App: Open index.html in any modern web browser.
 
-Left-to-Right (Standard): Pages flow 1 → 2 → 3.
+Load a File: Drag and drop a PDF file into the drop zone.
 
-Right-to-Left (Manga): Pages flow 3 ← 2 ← 1 (Used for Japanese comics).
+Navigate:
 
-2.3 Navigation
+Click: Use "Prev" / "Next" buttons.
 
-Manual Control: "Prev" and "Next" buttons.
+Keyboard: Use ← / → arrow keys.
 
-Keyboard Support: Left and Right arrow keys for page navigation.
+URL Parameters:
 
-Page Info: Displays "Current Page / Total Pages".
+Syntax: ?pdf=[URL]&page=[Number]
 
-2.4 Auto-Play
+Example: index.html?pdf=https://example.com/comic.pdf&page=3
 
-Functionality: Automatically advances to the next page after a set interval.
+Note: The server hosting the PDF must support CORS.
 
-Configuration: Input field to set the interval in seconds (default: 3s).
+# Specification
 
-Controls: "Start/Stop" toggle button.
+Architecture: Single-page application (SPA).
 
-Interrupts: Auto-play stops automatically upon:
+Tech Stack: HTML5, CSS3, Vanilla JavaScript (ES6+).
 
-Reaching the last page.
+Library: PDF.js (v3.11.174).
 
-Manual navigation (button click or key press).
+Compatibility: Works in Chrome, Edge, Firefox, and Safari.
 
-Loading a new file.
-
-2.5 Full Screen
-
-Toggle: Button to enter/exit browser native full-screen mode.
-
-Behavior:
-
-Hides the top control bar completely.
-
-Background color changes to Light Gray (#ccc).
-
-PDF scales to fit the screen dimensions automatically.
-
-3. UI/UX Requirements
-
-3.1 Layout & Design
-
-Compact UI: Control bar height is minimized to maximize reading area.
-
-Language: All UI text is in English.
-
-Visual Style:
-
-Dark grey control bar (#333).
-
-Light grey background for content area (Windowed: #e5e5e5, Full screen: #ccc).
-
-Page Gap: Minimal gap (5px) between pages in Spread mode.
-
-3.2 Responsiveness
-
-Auto-Fit: The PDF scale is dynamically calculated to ensure pages fit entirely within the viewport (width and height) without scrolling if possible.
-
-Resize Handling: The viewer automatically re-renders and re-scales pages when the browser window is resized.
-
-4. Technical Stack
-
-HTML5/CSS3: For structure and styling.
-
-JavaScript: Vanilla JS (ES6+).
-
-Library: PDF.js (v3.11.174) via CDN for PDF rendering.
