@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Simple PDF Viewer</title>
-    <!-- PDF.js -->
+    <!-- Load PDF.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <style>
         body {
@@ -122,6 +122,7 @@
             display: none !important;
         }
 
+        /* Full Screen Styles */
         :fullscreen #drop-zone {
             margin: 0;
             border: none;
@@ -131,7 +132,7 @@
         }
         
         :fullscreen body {
-            background-color: #ccc; /* Lighter gray background in fullscreen */
+            background-color: #ccc;
         }
 
         :fullscreen #controls {
@@ -171,6 +172,7 @@
     </div>
 
     <script>
+        // Set worker source for PDF.js
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
         let pdfDoc = null;
@@ -195,7 +197,7 @@
             viewModeBtn.classList.add('active');
         }
 
-        // --- Drag & Drop ---
+        // --- Drag & Drop Handling ---
         dropZone.addEventListener('dragover', (e) => {
             e.preventDefault();
             dropZone.classList.add('dragover');
@@ -230,16 +232,43 @@
             const fileReader = new FileReader();
             fileReader.onload = function() {
                 const typedarray = new Uint8Array(this.result);
-                loadPDF(typedarray);
+                // Load dropped file starting from page 1
+                loadPDF(typedarray, 1);
             };
             fileReader.readAsArrayBuffer(file);
         }
 
-        // --- Load PDF ---
-        async function loadPDF(data) {
+        // --- URL Parameter Handling ---
+        window.addEventListener('DOMContentLoaded', () => {
+            const urlParams = new URLSearchParams(window.location.search);
+            const pdfUrl = urlParams.get('pdf');
+            const pageParam = parseInt(urlParams.get('page'));
+
+            if (pdfUrl) {
+                // Determine initial page number from URL or default to 1
+                const initialPage = (!isNaN(pageParam) && pageParam > 0) ? pageParam : 1;
+                loadPDF(pdfUrl, initialPage);
+            }
+        });
+
+        // --- PDF Loading Logic ---
+        /**
+         * Loads a PDF from data (TypedArray) or URL.
+         * @param {Uint8Array|string} source - The PDF source.
+         * @param {number} initialPage - The page number to start at.
+         */
+        async function loadPDF(source, initialPage = 1) {
             try {
-                pdfDoc = await pdfjsLib.getDocument(data).promise;
-                pageNum = 1;
+                // PDF.js getDocument accepts both URL strings and TypedArrays
+                pdfDoc = await pdfjsLib.getDocument(source).promise;
+                
+                // Validate initial page
+                if (initialPage > pdfDoc.numPages) initialPage = pdfDoc.numPages;
+                if (initialPage < 1) initialPage = 1;
+                
+                pageNum = initialPage;
+                
+                // Update UI
                 placeholder.classList.add('hidden');
                 container.classList.remove('hidden');
                 
@@ -247,18 +276,17 @@
                 renderPages();
             } catch (error) {
                 console.error('Error loading PDF:', error);
-                alert('Failed to load PDF.');
+                alert('Failed to load PDF. (Note: URL loading requires CORS support on the server)');
             }
         }
 
-        // --- Render ---
+        // --- Rendering Logic ---
         async function renderPages() {
             if (!pdfDoc) return;
             pageRendering = true;
             container.innerHTML = '';
 
             // --- Auto-fit Scale Calculation ---
-            // Calculate scale to fit the screen (best fit)
             try {
                 const page = await pdfDoc.getPage(pageNum);
                 const viewport = page.getViewport({ scale: 1.0 });
@@ -281,7 +309,6 @@
                 const scaleH = availableHeight / viewport.height;
 
                 // Use the smaller scale to ensure it fits both width and height (Best Fit)
-                // Default to scaleH (vertical fit) if logic is ambiguous, but min() is safer.
                 scale = Math.min(scaleW, scaleH);
                 
             } catch (e) {
@@ -298,8 +325,10 @@
             } else {
                 // Spread Mode
                 if (pageNum === 1) {
+                    // Page 1 is usually the cover, displayed alone
                     pagesToRender.push(1);
                 } else {
+                    // Ensure we start from an even page (left side in L-to-R)
                     let leftPageBase = (pageNum % 2 === 0) ? pageNum : pageNum - 1;
                     const p1 = leftPageBase;
                     const p2 = leftPageBase + 1;
@@ -334,8 +363,7 @@
                 canvas.height = viewport.height;
                 canvas.width = viewport.width;
                 
-                // Ensure canvas doesn't overflow container flex logic
-                // Max width per page: 95% for single, 48% for spread (approx) to prevent wrapping
+                // Ensure canvas doesn't overflow container
                 canvas.style.maxWidth = isSpread ? "48%" : "95%"; 
 
                 container.appendChild(canvas);
@@ -351,11 +379,12 @@
             }
         }
 
-        // --- Navigation ---
+        // --- Navigation Logic ---
         function onPrevPage() {
             if (!pdfDoc || pageNum <= 1) return;
             
             let decrement = isSpread && pageNum > 1 ? 2 : 1;
+            // Adjustment when moving from page 2 (spread) back to page 1 (single cover)
             if(isSpread && pageNum === 2) decrement = 1;
             
             pageNum -= decrement;
@@ -384,7 +413,7 @@
             pageInfo.textContent = `${pageNum} / ${pdfDoc.numPages}`;
         }
 
-        // --- Auto Play ---
+        // --- Auto Play Logic ---
         const autoPlayBtn = document.getElementById('autoplay-btn');
         const intervalInput = document.getElementById('interval-input');
 
@@ -423,7 +452,7 @@
             intervalInput.disabled = false;
         }
 
-        // --- Full Screen ---
+        // --- Full Screen Logic ---
         const fullscreenBtn = document.getElementById('fullscreen-btn');
         
         function toggleFullScreen() {
@@ -462,7 +491,7 @@
 
         fullscreenBtn.addEventListener('click', toggleFullScreen);
 
-        // --- Event Listeners ---
+        // --- Event Listeners (Controls & Keys) ---
         document.getElementById('prev-btn').addEventListener('click', () => {
             stopAutoPlay();
             onPrevPage();
